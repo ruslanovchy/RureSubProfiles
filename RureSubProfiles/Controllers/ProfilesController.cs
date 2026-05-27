@@ -10,6 +10,7 @@ using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats;
 using SixLabors.ImageSharp.Formats.Jpeg;
 using System.Security.Claims;
+using System.Text.Json;
 
 namespace RureSubProfiles.Controllers;
 
@@ -91,6 +92,19 @@ public class ProfilesController : Controller
         }
 
         profile.DisplayName = dto.NewName;
+
+        db.OutboxMessages.Add(new OutboxMessage
+        {
+            OccuredAt = DateTime.UtcNow,
+            Topic = "profile-display-name-changed",
+            Content = JsonSerializer.Serialize(new ChangeProfilePropertyDto
+            {
+                ProfileId = profile.Id,
+                UserId = profile.UserId,
+                PropertyName = "DisplayName",
+                Value = profile.DisplayName
+            })
+        });
 
         await db.SaveChangesAsync();
 
@@ -232,6 +246,20 @@ public class ProfilesController : Controller
             }
 
             profile.AvatarPath = $"{bucket}/{imageId}.jpg";
+
+            db.OutboxMessages.Add(new OutboxMessage
+            {
+                OccuredAt = DateTime.UtcNow,
+                Topic = "profile-avatar-changed",
+                Content = JsonSerializer.Serialize(new ChangeProfilePropertyDto
+                {
+                    ProfileId = profile.Id,
+                    UserId = profile.UserId,
+                    PropertyName = "AvatarUrl",
+                    Value = Path.Combine(storagePath, profile.AvatarPath)
+                })
+            });
+
             await db.SaveChangesAsync();
 
             return Ok(Path.Combine(storagePath, profile.AvatarPath));

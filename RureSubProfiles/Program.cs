@@ -12,6 +12,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 
 builder.Services.AddSingleton<IImageResizer, ImageResizer>();
+builder.Services.AddHostedService<CleanerService>();
 
 #region Db
 
@@ -24,7 +25,7 @@ if (string.IsNullOrEmpty(connectionString))
 
 builder.Services.AddDbContext<ProfilesDbContext>(options =>
 {
-    options.UseNpgsql(connectionString);
+    options.UseNpgsql(connectionString).UseLoggerFactory(LoggerFactory.Create(b => b.AddFilter((_,_) => false)));
 });
 
 #endregion
@@ -78,16 +79,33 @@ builder.Services.AddCors(options =>
 
 #region Kafka
 
+var kafkaBootstrapServers = builder.Configuration["Kafka:BootstrapServers"];
+var kafkaGroupId = builder.Configuration["Kafka:BootstrapServers"];
+
+if (string.IsNullOrEmpty(kafkaBootstrapServers) || string.IsNullOrEmpty(kafkaGroupId))
+{
+    throw new Exception("Kafka did not configured!");
+}
+
 var kafkaConfig = new ConsumerConfig
 {
-    BootstrapServers = "localhost:9092",
-    GroupId = "profile-service",
-    AutoOffsetReset = AutoOffsetReset.Earliest
+    BootstrapServers = kafkaBootstrapServers,
+    GroupId = kafkaGroupId,
+    AutoOffsetReset = AutoOffsetReset.Earliest,
+    EnableAutoCommit = false,
+    EnableAutoOffsetStore = false,
+};
+
+var kafkaProducerConfig = new ProducerConfig
+{
+    BootstrapServers = kafkaBootstrapServers
 };
 
 builder.Services.AddSingleton(kafkaConfig);
+builder.Services.AddSingleton(kafkaProducerConfig);
 
 builder.Services.AddHostedService<CreateProfileService>();
+builder.Services.AddHostedService<OutboxProcessor>();
 
 #endregion
 

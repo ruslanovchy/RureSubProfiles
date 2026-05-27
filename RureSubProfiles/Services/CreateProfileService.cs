@@ -23,7 +23,7 @@ public class CreateProfileService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        using var consumer = new ConsumerBuilder<Null, string>(config).Build();
+        using var consumer = new ConsumerBuilder<string, string>(config).Build();
 
         consumer.Subscribe("user-created");
 
@@ -33,10 +33,11 @@ public class CreateProfileService : BackgroundService
 
             using var scope = scopefactory.CreateScope();
 
-            var db = scope.ServiceProvider.GetRequiredService<ProfilesDbContext>();
+            using var db = scope.ServiceProvider.GetRequiredService<ProfilesDbContext>();
 
             if (string.IsNullOrEmpty(result.Message.Value))
             {
+                consumer.Commit(result);
                 continue;   
             }
 
@@ -44,25 +45,45 @@ public class CreateProfileService : BackgroundService
             {
                 var dto = JsonSerializer.Deserialize<CreateProfileDto>(result.Message.Value);
 
-                if (dto == null || string.IsNullOrEmpty(dto.UserName))
+                var messageKeyRaw = result.Message.Key;
+
+                if (dto == null || string.IsNullOrEmpty(dto.UserName) ||
+                    string.IsNullOrEmpty(messageKeyRaw) || !Guid.TryParse(messageKeyRaw, out var messageKey))
                 {
+                    consumer.Commit(result);
                     continue;
                 }
 
                 if (await db.Profiles.AnyAsync(p => p.UserId == dto.UserId || p.UserName == dto.UserName, cancellationToken: stoppingToken))
                 {
+                    consumer.Commit(result);
                     continue;
                 }
 
-                db.Profiles.Add(new Profile
+                try
                 {
-                    UserName = dto.UserName,
-                    DisplayName = dto.UserName,
-                    CreatedAt = DateTime.UtcNow,
-                    UserId = dto.UserId
-                });
+                    db.Profiles.Add(new Profile
+                    {
+                        UserName = dto.UserName,
+                        DisplayName = dto.UserName,
+                        CreatedAt = DateTime.UtcNow,
+                        UserId = dto.UserId
+                    });
 
-                await db.SaveChangesAsync(stoppingToken);
+                    db.InboxMessages.Add(new InboxMessage
+                    {
+                        Id = messageKey,
+                        ProcessedAt = DateTime.UtcNow,
+                        Topic = "user-created"
+                    });
+
+                    await db.SaveChangesAsync(stoppingToken);
+                }
+                finally
+                {
+                    consumer.Commit(result);
+                }
+
             }
             catch (Exception e)
             {

@@ -5,6 +5,8 @@ namespace RureSubProfiles.Models;
 public class ProfilesDbContext : DbContext
 {
     public DbSet<Profile> Profiles { get; set; }
+    public DbSet<InboxMessage> InboxMessages { get; set; }
+    public DbSet<OutboxMessage> OutboxMessages { get; set; }
 
     public ProfilesDbContext(DbContextOptions<ProfilesDbContext> options) : base(options)
     {

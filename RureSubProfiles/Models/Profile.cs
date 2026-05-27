@@ -2,7 +2,7 @@
 
 public class Profile
 {
-    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid Id { get; set; } = Guid.CreateVersion7();
     public Guid UserId { get; set; }
 
     public string UserName { get; set; } = null!;
