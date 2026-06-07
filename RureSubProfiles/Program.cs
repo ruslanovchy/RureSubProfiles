@@ -5,6 +5,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using RureSubProfiles.Models;
 using RureSubProfiles.Services;
+using RureSubProfiles.Workers;
+using StackExchange.Redis;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -12,7 +14,6 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 
 builder.Services.AddSingleton<IImageResizer, ImageResizer>();
-builder.Services.AddHostedService<CleanerService>();
 
 #region Db
 
@@ -67,8 +68,8 @@ builder.Services.AddAuthentication(options =>
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("Development", policy =>
-    {   
-        policy.WithOrigins("http://localhost:5173")
+    {
+        policy.WithOrigins("http://localhost:5173", "http://localhost")
             .AllowAnyHeader()
             .AllowAnyMethod()
             .AllowCredentials();
@@ -104,22 +105,48 @@ var kafkaProducerConfig = new ProducerConfig
 builder.Services.AddSingleton(kafkaConfig);
 builder.Services.AddSingleton(kafkaProducerConfig);
 
-builder.Services.AddHostedService<CreateProfileService>();
-builder.Services.AddHostedService<OutboxProcessor>();
+builder.Services.AddHostedService<CleanerWorker>();
+builder.Services.AddHostedService<UserFollowedWorker>();
+builder.Services.AddHostedService<CreateProfileWorker>();
+builder.Services.AddHostedService<PostChangedWorker>();
+builder.Services.AddHostedService<OutboxWorker>();
 
 #endregion
 
 #region S3
 
+var s3ServiceURL = builder.Configuration["S3:ServiceURL"];
+
+if (string.IsNullOrEmpty(s3ServiceURL))
+{
+    throw new Exception("S3 was not configured!");
+}
+
 var s3Config = new AmazonS3Config
 {
-    ServiceURL = "http://localhost:9000",
+    ServiceURL = s3ServiceURL,
     ForcePathStyle = true
 };
 
 var s3Client = new AmazonS3Client("minioadmin", "minioadmin", s3Config);
 
 builder.Services.AddSingleton(s3Client);
+
+#endregion
+
+#region Redis
+
+var redisConnectionString = builder.Configuration["Redis:ConnectionString"];
+
+if (string.IsNullOrEmpty(redisConnectionString))
+{
+    throw new Exception("Redis was not configured!");
+}
+
+builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
+{
+    return ConnectionMultiplexer.Connect(redisConnectionString);
+});
 
 #endregion
 

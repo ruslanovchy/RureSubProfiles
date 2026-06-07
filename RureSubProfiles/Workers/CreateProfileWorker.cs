@@ -4,16 +4,16 @@ using RureSubProfiles.Models;
 using RureSubProfiles.Models.Dto;
 using System.Text.Json;
 
-namespace RureSubProfiles.Services;
+namespace RureSubProfiles.Workers;
 
-public class CreateProfileService : BackgroundService
+public class CreateProfileWorker : BackgroundService
 {
     private readonly IServiceScopeFactory scopefactory;
 
     private readonly ConsumerConfig config;
-    private readonly ILogger<CreateProfileService> logger;
+    private readonly ILogger<CreateProfileWorker> logger;
 
-    public CreateProfileService(IServiceScopeFactory scopeFactory, ConsumerConfig config, ILogger<CreateProfileService> logger)
+    public CreateProfileWorker(IServiceScopeFactory scopeFactory, ConsumerConfig config, ILogger<CreateProfileWorker> logger)
     {
         this.scopefactory = scopeFactory;
 

@@ -3,17 +3,17 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using RureSubProfiles.Models;
 
-namespace RureSubProfiles.Services;
+namespace RureSubProfiles.Workers;
 
-public class OutboxProcessor : BackgroundService
+public class OutboxWorker : BackgroundService
 {
     private readonly ProducerConfig config;
-    private readonly ILogger<OutboxProcessor> logger;
+    private readonly ILogger<OutboxWorker> logger;
     private readonly IServiceScopeFactory scopeFactory;
 
-    public OutboxProcessor(
+    public OutboxWorker(
         [FromServices] ProducerConfig config, 
-        [FromServices] ILogger<OutboxProcessor> logger, 
+        [FromServices] ILogger<OutboxWorker> logger, 
         [FromServices] IServiceScopeFactory scopeFactory)
     {
         this.config = config;

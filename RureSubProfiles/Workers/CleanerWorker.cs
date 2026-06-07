@@ -1,9 +1,9 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using RureSubProfiles.Models;
 
-namespace RureSubProfiles.Services;
+namespace RureSubProfiles.Workers;
 
-public class CleanerService(IServiceScopeFactory scopeFactory) : BackgroundService
+public class CleanerWorker(IServiceScopeFactory scopeFactory) : BackgroundService
 {
     private readonly IServiceScopeFactory scopeFactory = scopeFactory;
 

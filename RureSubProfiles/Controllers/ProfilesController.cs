@@ -9,6 +9,7 @@ using RureSubProfiles.Services;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats;
 using SixLabors.ImageSharp.Formats.Jpeg;
+using StackExchange.Redis;
 using System.Security.Claims;
 using System.Text.Json;
 
@@ -30,8 +31,9 @@ public class ProfilesController : Controller
 
     [HttpGet("/")]
     public async Task<IActionResult> GetProfile(
-        [FromServices]ProfilesDbContext db, 
-        [FromServices] IConfiguration config, 
+        [FromServices] ProfilesDbContext db, 
+        [FromServices] IConfiguration config,
+        [FromServices] IConnectionMultiplexer redis,
         [FromQuery]Guid? id, 
         [FromQuery]string? userName)
     {
@@ -52,19 +54,44 @@ public class ProfilesController : Controller
 
         string storagePath = config["S3:StoragePath"] ?? "/";
 
-        return Ok(new
+        var result = new ProfileResponseDto
         {
-            profile.Id,
-            profile.UserId,
-            profile.UserName,
-            profile.DisplayName,
-            profile.Bio,
+            Id = profile.Id,
+            UserId = profile.UserId,
+            UserName = profile.UserName,
+            DisplayName = profile.DisplayName,
+            Bio = profile.Bio,
             AvatarUrl = profile.AvatarPath != null ? Path.Combine(storagePath, profile.AvatarPath) : null,
             BannerUrl = profile.BannerPath != null ? Path.Combine(storagePath, profile.BannerPath) : null,
-            profile.ShowFollowers,
-            profile.IsVerified,
-            profile.CreatedAt
-        });
+            ShowFollowers = profile.ShowFollowers,
+            IsVerified = profile.IsVerified,
+            FollowersCount = profile.FollowersCount,
+            FollowingsCount = profile.FollowingsCount,
+            PostsCount = profile.PostsCount,
+            CreatedAt = profile.CreatedAt
+        };
+
+        var userIdRaw = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier);
+        if (userIdRaw == null || string.IsNullOrEmpty(userIdRaw.Value) || !Guid.TryParse(userIdRaw.Value, out var userId))
+        {
+            return Ok(result);
+        }
+
+        var redisDb = redis.GetDatabase();
+
+        var userRedisId = await redisDb.StringGetAsync($"user:id:{userId}");
+        var profileRedisId = await redisDb.StringGetAsync($"user:id:{profile.UserId}");
+
+        if (userRedisId.IsNull || profileRedisId.IsNull)
+        {
+            return Ok(result);
+        }
+
+        var isFollowed = await redisDb.SortedSetRankAsync($"user:{userRedisId}:following", profileRedisId);
+
+        result.IsFollowed = isFollowed.HasValue;
+
+        return Ok(result);
     }
 
     [HttpPatch("/name")]
@@ -274,6 +301,7 @@ public class ProfilesController : Controller
     
 
     [HttpPatch("/banner")]
+    [RequestSizeLimit(100_000_000)]
     [Authorize]
     public async Task<IActionResult> ChangeBanner(
         [FromServices] ProfilesDbContext db,
