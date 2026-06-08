@@ -136,19 +136,26 @@ builder.Services.AddSingleton(s3Client);
 
 #region Redis
 
-var redisConnectionString = builder.Configuration["Redis:ConnectionString"];
+var redisFollowersConnectionString = builder.Configuration["Redis:FollowersConnectionString"];
 
-if (string.IsNullOrEmpty(redisConnectionString))
+if (string.IsNullOrEmpty(redisFollowersConnectionString))
 {
     throw new Exception("Redis was not configured!");
 }
 
-builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
+builder.Services.AddKeyedSingleton<IConnectionMultiplexer>("followers", (sp, key) =>
 {
-    return ConnectionMultiplexer.Connect(redisConnectionString);
+    return ConnectionMultiplexer.Connect(redisFollowersConnectionString);
 });
 
 #endregion
+
+builder.Services.AddSingleton<ISnowflakeIdGenerator>(sp =>
+{
+    return new SnowflakeIdGenerator(0);
+});
+
+builder.Services.AddSingleton<IFollowersService, FollowersService>();
 
 var app = builder.Build();
 

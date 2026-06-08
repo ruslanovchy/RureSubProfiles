@@ -9,21 +9,25 @@ namespace RureSubProfiles.Workers;
 public class PostChangedWorker : BackgroundService
 {
     private readonly ConsumerConfig config;
+    private readonly ProducerConfig producerConfig;
     private readonly IServiceScopeFactory scopeFactory;
     private readonly ILogger<UserFollowedWorker> logger;
 
     public PostChangedWorker(
         ConsumerConfig config,
+        ProducerConfig producerConfig,
         IServiceScopeFactory scopeFactory,
         ILogger<UserFollowedWorker> logger)
     {
         this.config = config;
+        this.producerConfig = producerConfig;
         this.scopeFactory = scopeFactory;
         this.logger = logger;
     }
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var consumer = new ConsumerBuilder<string, string>(config).Build();
+        var producer = new ProducerBuilder<string, string>(producerConfig).Build();
 
         consumer.Subscribe(["post-created", "post-deleted"]);
 

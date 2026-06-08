@@ -1,23 +1,39 @@
 ﻿using Confluent.Kafka;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using RureSubProfiles.Models;
 using RureSubProfiles.Models.Dto;
+using RureSubProfiles.Services;
 using System.Text.Json;
 
 namespace RureSubProfiles.Workers;
+
+
 
 public class CreateProfileWorker : BackgroundService
 {
     private readonly IServiceScopeFactory scopefactory;
 
     private readonly ConsumerConfig config;
+    private readonly ISnowflakeIdGenerator snowflakeIdGenerator;
     private readonly ILogger<CreateProfileWorker> logger;
 
-    public CreateProfileWorker(IServiceScopeFactory scopeFactory, ConsumerConfig config, ILogger<CreateProfileWorker> logger)
+    private static bool IsDuplicateInboxMessage(DbUpdateException ex)
+    {
+        return ex.InnerException is PostgresException postgres &&
+               postgres.SqlState == PostgresErrorCodes.UniqueViolation;
+    }
+
+    public CreateProfileWorker(
+        IServiceScopeFactory scopeFactory, 
+        ConsumerConfig config, 
+        ISnowflakeIdGenerator snowflakeIdGenerator,
+        ILogger<CreateProfileWorker> logger)
     {
         this.scopefactory = scopeFactory;
 
         this.config = config;
+        this.snowflakeIdGenerator = snowflakeIdGenerator;
         this.logger = logger;
     }
 
@@ -45,10 +61,10 @@ public class CreateProfileWorker : BackgroundService
             {
                 var dto = JsonSerializer.Deserialize<CreateProfileDto>(result.Message.Value);
 
-                var messageKeyRaw = result.Message.Key;
+                var messageIdRaw = result.Message.Key;
 
                 if (dto == null || string.IsNullOrEmpty(dto.UserName) ||
-                    string.IsNullOrEmpty(messageKeyRaw) || !Guid.TryParse(messageKeyRaw, out var messageKey))
+                    string.IsNullOrEmpty(messageIdRaw) || !Guid.TryParse(messageIdRaw, out var messageId))
                 {
                     consumer.Commit(result);
                     continue;
@@ -62,26 +78,42 @@ public class CreateProfileWorker : BackgroundService
 
                 try
                 {
-                    db.Profiles.Add(new Profile
+                    var profile = new Profile
                     {
                         UserName = dto.UserName,
+                        RedisId = snowflakeIdGenerator.NextId(),
                         DisplayName = dto.UserName,
                         CreatedAt = DateTime.UtcNow,
                         UserId = dto.UserId
-                    });
+                    };
+
+                    db.Profiles.Add(profile);
 
                     db.InboxMessages.Add(new InboxMessage
                     {
-                        Id = messageKey,
+                        Id = messageId,
                         ProcessedAt = DateTime.UtcNow,
                         Topic = "user-created"
                     });
 
+                    db.OutboxMessages.Add(new OutboxMessage
+                    {
+                        Id = Guid.CreateVersion7(),
+                        Topic = "profile-created",
+                        Content = JsonSerializer.Serialize(profile),
+                    });
+
                     await db.SaveChangesAsync(stoppingToken);
                 }
-                finally
+                catch (DbUpdateException ex) when (IsDuplicateInboxMessage(ex))
                 {
+                    logger.LogError(ex, "Message {messageId} already was processed!", messageId);
+
                     consumer.Commit(result);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Error occured while processing message!");
                 }
 
             }

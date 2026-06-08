@@ -22,5 +22,9 @@ public class ProfilesDbContext : DbContext
         modelBuilder.Entity<Profile>()
             .HasIndex(p => p.UserId)
             .IsUnique();
+
+        modelBuilder.Entity<Profile>()
+            .HasIndex(p => p.RedisId)
+            .IsUnique();
     }
 }

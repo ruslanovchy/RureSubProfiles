@@ -9,7 +9,6 @@ using RureSubProfiles.Services;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats;
 using SixLabors.ImageSharp.Formats.Jpeg;
-using StackExchange.Redis;
 using System.Security.Claims;
 using System.Text.Json;
 
@@ -33,7 +32,7 @@ public class ProfilesController : Controller
     public async Task<IActionResult> GetProfile(
         [FromServices] ProfilesDbContext db, 
         [FromServices] IConfiguration config,
-        [FromServices] IConnectionMultiplexer redis,
+        [FromServices] IFollowersService followersService,
         [FromQuery]Guid? id, 
         [FromQuery]string? userName)
     {
@@ -77,19 +76,9 @@ public class ProfilesController : Controller
             return Ok(result);
         }
 
-        var redisDb = redis.GetDatabase();
+        var isFollowed = await followersService.IsFollowed(userId, profile.UserId);
 
-        var userRedisId = await redisDb.StringGetAsync($"user:id:{userId}");
-        var profileRedisId = await redisDb.StringGetAsync($"user:id:{profile.UserId}");
-
-        if (userRedisId.IsNull || profileRedisId.IsNull)
-        {
-            return Ok(result);
-        }
-
-        var isFollowed = await redisDb.SortedSetRankAsync($"user:{userRedisId}:following", profileRedisId);
-
-        result.IsFollowed = isFollowed.HasValue;
+        result.IsFollowed = isFollowed ?? false;
 
         return Ok(result);
     }
