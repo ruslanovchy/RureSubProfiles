@@ -26,5 +26,13 @@ public class ProfilesDbContext : DbContext
         modelBuilder.Entity<Profile>()
             .HasIndex(p => p.RedisId)
             .IsUnique();
+
+        modelBuilder.Entity<Profile>()
+            .Property(p => p.ShowFollowers)
+            .HasDefaultValue(true);
+
+        modelBuilder.Entity<Profile>()
+            .Property(p => p.ShowFollowings)
+            .HasDefaultValue(true);
     }
 }

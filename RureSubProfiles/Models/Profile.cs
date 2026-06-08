@@ -14,6 +14,7 @@ public class Profile
     public string? BannerPath { get; set; }
 
     public bool ShowFollowers { get; set; } = true;
+    public bool ShowFollowings { get; set; } = true;
     public bool IsVerified { get; set; } = false;
 
     public int FollowersCount { get; set; }

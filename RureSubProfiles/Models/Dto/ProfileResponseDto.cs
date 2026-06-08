@@ -13,6 +13,7 @@ public class ProfileResponseDto
     public string? BannerUrl { get; set; }
 
     public bool ShowFollowers { get; set; } = true;
+    public bool ShowFollowings { get; set; } = true;
     public bool IsVerified { get; set; } = false;
     public bool IsFollowed { get; set; }
 

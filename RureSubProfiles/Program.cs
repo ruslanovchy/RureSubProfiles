@@ -13,6 +13,9 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+
 builder.Services.AddSingleton<IImageResizer, ImageResizer>();
 
 #region Db
@@ -171,6 +174,8 @@ app.UseRouting();
 if (app.Environment.IsDevelopment())
 {
     app.UseCors("Development");
+    app.UseSwagger();
+    app.UseSwaggerUI();
 }
 
 app.UseAuthentication();

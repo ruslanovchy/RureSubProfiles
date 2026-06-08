@@ -33,8 +33,9 @@ public class ProfilesController : Controller
         [FromServices] ProfilesDbContext db, 
         [FromServices] IConfiguration config,
         [FromServices] IFollowersService followersService,
-        [FromQuery]Guid? id, 
-        [FromQuery]string? userName)
+        [FromQuery] Guid? id, 
+        [FromQuery] string? userName,
+        [FromQuery] bool? isSettings)
     {
         Profile? profile = null;
         if (id != null)
@@ -63,6 +64,7 @@ public class ProfilesController : Controller
             AvatarUrl = profile.AvatarPath != null ? Path.Combine(storagePath, profile.AvatarPath) : null,
             BannerUrl = profile.BannerPath != null ? Path.Combine(storagePath, profile.BannerPath) : null,
             ShowFollowers = profile.ShowFollowers,
+            ShowFollowings = profile.ShowFollowings,
             IsVerified = profile.IsVerified,
             FollowersCount = profile.FollowersCount,
             FollowingsCount = profile.FollowingsCount,
@@ -73,12 +75,32 @@ public class ProfilesController : Controller
         var userIdRaw = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier);
         if (userIdRaw == null || string.IsNullOrEmpty(userIdRaw.Value) || !Guid.TryParse(userIdRaw.Value, out var userId))
         {
+            result.FollowersCount = result.ShowFollowers ? result.FollowersCount : 0;
+            result.FollowingsCount = result.ShowFollowings ? result.FollowingsCount : 0;
             return Ok(result);
         }
 
         var isFollowed = await followersService.IsFollowed(userId, profile.UserId);
 
         result.IsFollowed = isFollowed ?? false;
+
+        // Check should we sent true followers and followings count to client
+        isSettings = isSettings ?? false;
+        if (userId != profile.UserId)
+        {
+            result.FollowersCount = result.ShowFollowers ? result.FollowersCount : 0;
+            result.FollowingsCount = result.ShowFollowings ? result.FollowingsCount : 0;
+        }
+        else
+        {
+            if (isSettings.Value)
+            {
+                result.ShowFollowers = true;
+                result.ShowFollowings = true;
+            }
+            result.FollowersCount = profile.FollowersCount;
+            result.FollowingsCount = profile.FollowingsCount;
+        }
 
         return Ok(result);
     }
@@ -430,6 +452,37 @@ public class ProfilesController : Controller
         }
 
         profile.ShowFollowers = dto.Value;
+
+        await db.SaveChangesAsync();
+
+        return Ok();
+    }
+
+    [HttpPatch("/showfollowings")]
+    [Authorize]
+    public async Task<IActionResult> ChangeShowFollowings(
+        [FromServices] ProfilesDbContext db,
+        [FromForm] ChangeShowFollowingsDto dto)
+    {
+        if (!ModelState.IsValid)
+        {
+            return BadRequest();
+        }
+
+        var userId = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier);
+        if (userId == null || userId.Value == null || userId.Value != dto.UserId.ToString())
+        {
+            return Unauthorized();
+        }
+
+        Profile? profile = await db.Profiles.FirstOrDefaultAsync(p => p.UserId == dto.UserId);
+
+        if (profile == null)
+        {
+            return NotFound();
+        }
+
+        profile.ShowFollowings = dto.Value;
 
         await db.SaveChangesAsync();
 
