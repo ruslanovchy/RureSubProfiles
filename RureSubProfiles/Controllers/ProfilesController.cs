@@ -85,7 +85,7 @@ public class ProfilesController : Controller
         result.IsFollowed = isFollowed ?? false;
 
         // Check should we sent true followers and followings count to client
-        isSettings = isSettings ?? false;
+        isSettings ??= false;
         if (userId != profile.UserId)
         {
             result.FollowersCount = result.ShowFollowers ? result.FollowersCount : 0;
@@ -93,7 +93,7 @@ public class ProfilesController : Controller
         }
         else
         {
-            if (isSettings.Value)
+            if (!isSettings.Value)
             {
                 result.ShowFollowers = true;
                 result.ShowFollowings = true;
