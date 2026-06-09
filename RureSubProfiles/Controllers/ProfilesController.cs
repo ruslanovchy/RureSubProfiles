@@ -28,6 +28,24 @@ public class ProfilesController : Controller
         };
     }
 
+    public ProfileResponseDto GetProfileResponse(Profile profile, string? storagePath = null) => new ProfileResponseDto
+    {
+        Id = profile.Id,
+        UserId = profile.UserId,
+        UserName = profile.UserName,
+        DisplayName = profile.DisplayName,
+        Bio = profile.Bio,
+        AvatarUrl = storagePath == null ? null : profile.AvatarPath != null ? Path.Combine(storagePath, profile.AvatarPath) : null,
+        BannerUrl = storagePath == null ? null : profile.BannerPath != null ? Path.Combine(storagePath, profile.BannerPath) : null,
+        ShowFollowers = profile.ShowFollowers,
+        ShowFollowings = profile.ShowFollowings,
+        IsVerified = profile.IsVerified,
+        FollowersCount = profile.FollowersCount,
+        FollowingsCount = profile.FollowingsCount,
+        PostsCount = profile.PostsCount,
+        CreatedAt = profile.CreatedAt
+    };
+
     [HttpGet("/")]
     public async Task<IActionResult> GetProfile(
         [FromServices] ProfilesDbContext db, 
@@ -54,23 +72,7 @@ public class ProfilesController : Controller
 
         string storagePath = config["S3:StoragePath"] ?? "/";
 
-        var result = new ProfileResponseDto
-        {
-            Id = profile.Id,
-            UserId = profile.UserId,
-            UserName = profile.UserName,
-            DisplayName = profile.DisplayName,
-            Bio = profile.Bio,
-            AvatarUrl = profile.AvatarPath != null ? Path.Combine(storagePath, profile.AvatarPath) : null,
-            BannerUrl = profile.BannerPath != null ? Path.Combine(storagePath, profile.BannerPath) : null,
-            ShowFollowers = profile.ShowFollowers,
-            ShowFollowings = profile.ShowFollowings,
-            IsVerified = profile.IsVerified,
-            FollowersCount = profile.FollowersCount,
-            FollowingsCount = profile.FollowingsCount,
-            PostsCount = profile.PostsCount,
-            CreatedAt = profile.CreatedAt
-        };
+        var result = GetProfileResponse(profile, storagePath);
 
         var userIdRaw = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier);
         if (userIdRaw == null || string.IsNullOrEmpty(userIdRaw.Value) || !Guid.TryParse(userIdRaw.Value, out var userId))
@@ -487,5 +489,150 @@ public class ProfilesController : Controller
         await db.SaveChangesAsync();
 
         return Ok();
+    }
+
+    [HttpGet("/followers")]
+    public async Task<IActionResult> GetFollowers(
+        [FromServices] ProfilesDbContext db,
+        [FromServices] IFollowersService followersService,
+        [FromServices] IConfiguration config,
+        [FromQuery] Guid? profileId,
+        [FromQuery] int page,
+        [FromQuery] int pageSize = 10)
+    {
+        if (profileId == null)
+        {
+            return BadRequest();
+        }
+
+        page = page < 1 ? 1 : page;
+        pageSize = (pageSize < 2) ? 2 : (pageSize > 100) ? 100 : pageSize;
+
+        var profile = await db.Profiles.FirstOrDefaultAsync(p => p.Id == profileId.Value);
+
+        if (profile == null)
+        {
+            return NotFound();
+        }
+
+        var userIdRaw = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier);
+        var canParseUserId = Guid.TryParse(userIdRaw?.Value, out var userId);
+
+        if (!profile.ShowFollowers)
+        {
+            if (userIdRaw == null || string.IsNullOrEmpty(userIdRaw.Value) || !canParseUserId)
+            {
+                return Forbid();
+            }
+
+            if (userId != profile.UserId)
+            {
+                return Forbid();
+            }
+        }
+
+        var followersRedisIds = await followersService.GetUserFollowers(profile.UserId, pageSize, page);
+
+        string storagePath = config["S3:StoragePath"] ?? "/";
+
+        var followers = await db.Profiles
+            .Where(p => followersRedisIds.Contains(p.RedisId))
+            .ToListAsync();
+
+        var orderMap = followersRedisIds
+            .Select((element, index) => new { element, index })
+            .ToDictionary(e => e.element, e => e.index);
+
+        followers = [.. followers
+            .OrderBy(f => orderMap[f.RedisId])
+            .Select(f => f)];
+
+        var result = followers.Select(f => GetProfileResponse(f, storagePath)).ToArray();
+
+        if (userIdRaw == null || string.IsNullOrEmpty(userIdRaw.Value) || !canParseUserId)
+        {
+            return Ok(result);
+        }
+
+        var myFollowings = await followersService.IsFollowed(userId, [.. followers.Select(r => r.RedisId.ToString())]);
+
+        if (myFollowings.Length == result.Length)
+        {
+            for (int i = 0; i < myFollowings.Length; i++)
+            {
+                result[i].IsFollowed = myFollowings[i];
+            }
+        }
+
+        return Ok(result);
+    }
+
+    [HttpGet("/followings")]
+    public async Task<IActionResult> GetFollowings(
+        [FromServices] ProfilesDbContext db,
+        [FromServices] IFollowersService followersService,
+        [FromServices] IConfiguration config,
+        [FromQuery] Guid? profileId,
+        [FromQuery] int page,
+        [FromQuery] int pageSize = 10)
+    {
+        if (profileId == null)
+        {
+            return BadRequest();
+        }
+
+        page = page < 1 ? 1 : page;
+        pageSize = (pageSize < 2) ? 2 : (pageSize > 100) ? 100 : pageSize;
+
+        var profile = await db.Profiles.FirstOrDefaultAsync(p => p.Id == profileId.Value);
+
+        if (profile == null)
+        {
+            return NotFound();
+        }
+
+        var userIdRaw = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier);
+        var canParseUserId = Guid.TryParse(userIdRaw?.Value, out var userId);
+
+        if (!profile.ShowFollowers)
+        {
+            if (userIdRaw == null || string.IsNullOrEmpty(userIdRaw.Value) || !canParseUserId)
+            {
+                return Forbid();
+            }
+
+            if (userId != profile.UserId)
+            {
+                return Forbid();
+            }
+        }
+
+        var followersRedisIds = await followersService.GetUserFollowings(profile.UserId, pageSize, page);
+
+        string storagePath = config["S3:StoragePath"] ?? "/";
+
+        var followers = await db.Profiles
+            .Where(p => followersRedisIds.Contains(p.RedisId))
+            .ToListAsync();
+
+        var orderMap = followersRedisIds
+            .Select((element, index) => new { element, index })
+            .ToDictionary(e => e.element, e => e.index);
+
+        var result = followers
+            .OrderBy(f => orderMap[f.RedisId])
+            .Select(f => GetProfileResponse(f, storagePath)).ToArray();
+
+        if (userIdRaw == null || string.IsNullOrEmpty(userIdRaw.Value) || !canParseUserId)
+        {
+            return Ok(result);
+        }
+
+        for (int i = 0; i < result.Length; i++)
+        {
+            result[i].IsFollowed = true;
+        }
+
+        return Ok(result);
     }
 }

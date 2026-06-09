@@ -4,6 +4,7 @@ public class ProfileResponseDto
 {
     public Guid Id { get; set; } = Guid.CreateVersion7();
     public Guid UserId { get; set; }
+    public long Score { get; set; }
 
     public string UserName { get; set; } = null!;
     public string DisplayName { get; set; } = null!;
